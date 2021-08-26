@@ -4,6 +4,7 @@ import MySQLdb.cursors
 import re
 
 
+
 app = Flask(__name__)
 
 # Change this to your secret key (can be anything, it's for extra protection)
@@ -22,18 +23,30 @@ mysql = MySQL(app)
 # http://localhost:5000/pythonlogin/ - this will be the login page, we need to use both GET and POST requests
 @app.route('/pythonlogin/', methods=['GET', 'POST'])
 def login():
+    if 'loggedin' in session:
+        return render_template('home.html', username=session['username'])
     # Output message if something goes wrong...
     msg = ''
     # Check if "username" and "password" POST requests exist (user submitted form)
     if request.method == 'POST' and 'username' in request.form and 'password' in request.form:
         # Create variables for easy access
         username = request.form['username']
+
+        if username.isalnum() == False:
+            msg = 'Char other than Alphabet/Number detected!'
+            return render_template('index.html', msg=msg)
+        
         password = request.form['password']
         # Check if account exists using MySQL
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM accounts WHERE username = %s AND password = %s', (username, password,))
+        #cursor.execute('SELECT * FROM accounts WHERE username = %s AND password = %s', (username, password,))
+        #CALLING PROCEDURE INSTEAD OF SQL STATEMENT
+        args = [username, password]
+        result_args = cursor.callproc('CheckForExistingUser', args)
+        #print(result_args[1])
         # Fetch one record and return result
         account = cursor.fetchone()
+        cursor.close()  #ADDED TO CHECK - REMOVE IF ERRENOUS
         # If account exists in accounts table in out database
         if account:
             # Create session data, we can access this data in other routes
@@ -64,6 +77,9 @@ def logout():
 # http://localhost:5000/pythinlogin/register - this will be the registration page, we need to use both GET and POST requests
 @app.route('/pythonlogin/register', methods=['GET', 'POST'])
 def register():
+    if 'loggedin' in session:
+        return render_template('home.html', username=session['username'])
+
     # Output message if something goes wrong...
     msg = ''
     # Check if "username", "password" and "email" POST requests exist (user submitted form)
@@ -75,8 +91,12 @@ def register():
 
         # Check if account exists using MySQL
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
+        #cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
+        #CALLING PROCEDURE INSTEAD OF SQL STATEMENT
+        args = [username]
+        result_args = cursor.callproc('CheckAccountByUsername', args)
         account = cursor.fetchone()
+        cursor.close()  #ADDED TO CHECK - REMOVE IF ERRENOUS
         # If account exists show error and validation checks
         if account:
             msg = 'Account already exists!'
@@ -88,9 +108,29 @@ def register():
             msg = 'Please fill out the form!'
         else:
             # Account doesnt exists and the form data is valid, now insert new account into accounts table
-            cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s)', (username, password, email,))
+            #cursor.execute('INSERT INTO accounts VALUES (NULL, %s, %s, %s)', (username, password, email,))
+            args = [username, password, email]
+            cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+            result_args = cursor.callproc('CreateNewAccount', args)
             mysql.connection.commit()
+            cursor.close()  #ADDED TO CHECK - REMOVE IF ERRENOUS
             msg = 'You have successfully registered!'
+
+            cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+            #CALLING PROCEDURE INSTEAD OF SQL STATEMENT
+            args = [username, password]
+            result_args = cursor.callproc('CheckForExistingUser', args)
+            # Fetch one record and return result
+            account = cursor.fetchone()
+            cursor.close()  #ADDED TO CHECK - REMOVE IF ERRENOUS
+            # If account exists in accounts table in out database
+            if account:
+            # Create session data, we can access this data in other routes
+                session['loggedin'] = True
+                session['id'] = account['id']
+                session['username'] = account['username']
+                # Redirect to home page
+                return redirect(url_for('home'))
             
     elif request.method == 'POST':
         # Form is empty... (no POST data)
@@ -121,9 +161,16 @@ def profile():
     if 'loggedin' in session:
         # We need all the account info for the user so we can display it on the profile page
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
-        cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
+        #cursor.execute('SELECT * FROM accounts WHERE id = %s', (session['id'],))
+        args = [session['id']]
+        result_args = cursor.callproc('GetAccountById', args)
         account = cursor.fetchone()
         # Show the profile page with account info
         return render_template('profile.html', account=account)
     # User is not loggedin redirect to login page
     return redirect(url_for('login'))
+
+
+if __name__ == "__main__":
+    print('running...')
+    app.run(debug=True)
