@@ -2,6 +2,8 @@ from flask import Flask, render_template, request, redirect, url_for, session
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
 import re
+from flask_wtf.csrf import CSRFProtect
+
 
 
 
@@ -9,6 +11,16 @@ app = Flask(__name__)
 
 # Change this to your secret key (can be anything, it's for extra protection)
 app.secret_key = 'your secret key'
+
+#protection against CSRF attacks
+csrf = CSRFProtect()
+csrf.init_app(app)
+
+#protection for cookies in the app configuration object
+app.config.update(
+    SESSION_COOKIE_SECURE = True, #Browsers will only send cookies with requests over HTTPS if the cookie is marked “secure”. The application must be served over HTTPS for this to make sense.
+    SESSION_COOKIE_HTTPONLY = True  #Browsers will not allow JavaScript access to cookies marked as “HTTP only” for security.
+)
 
 # Enter your database connection details below
 app.config['MYSQL_HOST'] = 'localhost'
@@ -173,4 +185,4 @@ def profile():
 
 if __name__ == "__main__":
     print('running...')
-    app.run(debug=True)
+    app.run(ssl_context=('cert.pem', 'key.pem'), debug=True)
