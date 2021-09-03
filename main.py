@@ -226,9 +226,6 @@ def register():
 def home():
     # Check if user is loggedin
     if 'loggedin' in session:
-        # ip = request.environ.get('HTTP_X_REAL_IP', request.remote_addr)
-        # requestLimiter(ip)
-        # User is loggedin show them the home page
         return render_template('home.html', username=session['username'])
     # User is not loggedin redirect to login page
     return redirect(url_for('login'))
