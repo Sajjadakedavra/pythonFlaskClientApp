@@ -4,7 +4,9 @@ import MySQLdb.cursors
 import re
 from flask_wtf.csrf import CSRFProtect
 
+from datetime import date, datetime
 
+import json
 
 
 app = Flask(__name__)
@@ -32,15 +34,82 @@ app.config['MYSQL_DB'] = 'pythonlogin'
 mysql = MySQL(app)
 
 
+#Check if user has attempts left for login - allows for mitigating account enumeration through brute force
+def requestLimiter(ip):
+    cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+    cursor.execute('SELECT * FROM requestTime WHERE ip = %s', (ip,))
+    noOfRequests = cursor.fetchall()
+    cursor.close()
+    #print(len(noOfRequests))
+    allowedLimit = 0
+    if noOfRequests:
+        for reqNumber in noOfRequests:
+            currentTime = datetime.strptime(str(datetime.utcnow().replace(microsecond=0)), '%Y-%m-%d %H:%M:%S')
+            print(currentTime.timestamp() * 1000)
+            currentTime = currentTime.timestamp() * 1000
+            requestTime = datetime.strptime(str(reqNumber['ts']), '%Y-%m-%d %H:%M:%S')
+            print(requestTime.timestamp() * 1000)
+            requestTime = requestTime.timestamp() * 1000
+            delta = currentTime - requestTime
+            print(delta)
+            if delta <= 600000:
+                #print("delta is under 10 minutes")
+                allowedLimit+=1
+                #print('allowed limit values is: ', allowedLimit)
+                if allowedLimit >= 3:
+                    #print("i am true")
+                    return {'flag': True, 'timeElapsed': delta}
+            else:
+                #print("running else and delete entry in db")
+                cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+                cursor.execute('DELETE FROM requestTime WHERE id = %s', (reqNumber['id'],))
+                mysql.connection.commit()
+                cursor.close()
+        return {'flag': False, 'timeElapsed': delta}
+
+
+
+
 # http://localhost:5000/pythonlogin/ - this will be the login page, we need to use both GET and POST requests
 @app.route('/pythonlogin/', methods=['GET', 'POST'])
 def login():
     if 'loggedin' in session:
         return render_template('home.html', username=session['username'])
+    
+    ip = request.environ.get('HTTP_X_REAL_IP', request.remote_addr)
+    
+    collectReturn = requestLimiter(ip)
+    
+    if collectReturn:
+        if collectReturn['flag'] == False:
+            #false flag check means that user still has remaining tries to log in
+            print("\nFlag check is false\n")
+        else:
+            #tries to login have expired. ban user for remaining time
+            #print("\nFlag check is true\n")
+            #print(collectReturn['timeElapsed'])
+            timeToWait = 600000 - collectReturn['timeElapsed']
+            #print("wait for given minutes: ", timeToWait)
+            seconds=(timeToWait/1000)%60
+            seconds = int(seconds)
+            minutes=(timeToWait/(1000*60))%60
+            minutes = int(minutes)
+            hours=(timeToWait/(1000*60*60))%24
+            #print ("%d:%d:%d" % (hours, minutes, seconds))
+            myObj = "%d:%d:%d" % (hours, minutes, seconds)
+            dt_object1 = datetime.strptime(str(myObj), "%H:%M:%S")
+            timeToWait = "%s:%s:%s" % (dt_object1.hour, dt_object1.minute, dt_object1.second)
+            messages = json.dumps({"msg": timeToWait})
+            return redirect(url_for('error', messages=messages))
+
     # Output message if something goes wrong...
     msg = ''
     # Check if "username" and "password" POST requests exist (user submitted form)
     if request.method == 'POST' and 'username' in request.form and 'password' in request.form:
+
+        #insert client's ip address and current time into database
+        insertIntoRequestTime()
+
         # Create variables for easy access
         username = request.form['username']
 
@@ -152,12 +221,13 @@ def register():
 
 
 
-
 # http://localhost:5000/pythinlogin/home - this will be the home page, only accessible for loggedin users
 @app.route('/pythonlogin/home')
 def home():
     # Check if user is loggedin
     if 'loggedin' in session:
+        # ip = request.environ.get('HTTP_X_REAL_IP', request.remote_addr)
+        # requestLimiter(ip)
         # User is loggedin show them the home page
         return render_template('home.html', username=session['username'])
     # User is not loggedin redirect to login page
@@ -181,6 +251,34 @@ def profile():
         return render_template('profile.html', account=account)
     # User is not loggedin redirect to login page
     return redirect(url_for('login'))
+
+
+
+
+
+# http://localhost:5000/pythonlogin/error
+@app.route('/pythonlogin/error')
+def error():
+    # Check if user is loggedin
+    if 'loggedin' in session:
+        return redirect(url_for('home'))
+    # User is not loggedin redirect to login page
+    messages=''
+    if request.args:
+        messages = json.loads(request.args['messages'])
+    return render_template('error.html', messages=messages)
+
+
+
+#Insert client's ip address and time into db - allows for mitigating account enumeration through brute force
+def insertIntoRequestTime():
+        ip = request.environ.get('HTTP_X_REAL_IP', request.remote_addr)
+        date = datetime.utcnow().replace(microsecond=0)
+        #print(date)          
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('INSERT INTO requestTime VALUES (NULL, %s, %s)', (ip, date,))
+        mysql.connection.commit()
+        cursor.close()
 
 
 if __name__ == "__main__":
