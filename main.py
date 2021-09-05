@@ -116,7 +116,7 @@ def login():
         username = request.form['username']
 
         if username.isalnum() == False:
-            msg = 'Char other than Alphabet/Number detected!'
+            msg = 'Invalid Credentials!'
             return render_template('index.html', msg=msg)
         
         password = request.form['password']
@@ -142,7 +142,7 @@ def login():
             return redirect(url_for('home'))
         else:
             # Account doesnt exist or username/password incorrect
-            msg = 'Incorrect username/password!'
+            msg = 'Invalid Credentials!'
     # Show the login form with message (if any)
     return render_template('index.html', msg=msg)
 
