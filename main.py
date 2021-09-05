@@ -8,6 +8,8 @@ from datetime import date, datetime
 
 import json
 
+import hash
+
 
 app = Flask(__name__)
 
@@ -118,6 +120,8 @@ def login():
             return render_template('index.html', msg=msg)
         
         password = request.form['password']
+        #hashing the password
+        password = hash.adler32(password)   
         # Check if account exists using MySQL
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         #cursor.execute('SELECT * FROM accounts WHERE username = %s AND password = %s', (username, password,))
@@ -169,7 +173,8 @@ def register():
         username = request.form['username']
         password = request.form['password']
         email = request.form['email']
-
+        #hashing the password
+        password = hash.adler32(password)
         # Check if account exists using MySQL
         cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
         #cursor.execute('SELECT * FROM accounts WHERE username = %s', (username,))
@@ -226,6 +231,11 @@ def register():
 def home():
     # Check if user is loggedin
     if 'loggedin' in session:
+        #Delete all failed entries from db upon successful logon 
+        cursor = mysql.connection.cursor(MySQLdb.cursors.DictCursor)
+        cursor.execute('DELETE FROM requestTime WHERE id = %s', (session['id'],))
+        mysql.connection.commit()
+        cursor.close()
         return render_template('home.html', username=session['username'])
     # User is not loggedin redirect to login page
     return redirect(url_for('login'))
